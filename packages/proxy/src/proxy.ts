@@ -207,10 +207,7 @@ export class Proxy {
             reqPathname = nextUrl.pathname!;
 
             // Check if we have a static route
-            // Convert to filePath first, since routes with tailing `/` are
-            // stored as `/index` in filesystem
-            const filePath = reqPathname.replace(/\/$/, '/index');
-            if (!this.staticRoutes.has(filePath)) {
+            if (!this.staticRoutes.has(reqPathname)) {
               appendURLSearchParams(searchParams, nextUrl.searchParams);
               continue;
             }
