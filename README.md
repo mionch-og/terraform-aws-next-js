@@ -250,6 +250,7 @@ You can create a `.terraformignore` in the root of your project and add the foll
 | cloudfront\_hosted\_zone\_id | Zone id of the main CloudFront distribution (When created). |
 | cloudfront\_ordered\_cache\_behaviors | Preconfigured ordered cache behaviors the CloudFront distribution should use. |
 | cloudfront\_origins | Preconfigured origins the CloudFront distribution should use. |
+| lambda\_functions | The map of ARNs mapped to the published version of the Lambda functions deployed. Can be used in a for\_each as needed. |
 | static\_upload\_bucket\_id | n/a |
 
 <!--- END_TF_DOCS --->
