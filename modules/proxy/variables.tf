@@ -4,7 +4,7 @@
 
 variable "proxy_module_version" {
   type    = string
-  default = "0.7.0"
+  default = "0.10.1"
 }
 
 variable "lambda_default_runtime" {
@@ -35,4 +35,8 @@ variable "tags" {
 variable "debug_use_local_packages" {
   type    = bool
   default = false
+}
+
+variable "tf_next_module_root" {
+  type = string
 }

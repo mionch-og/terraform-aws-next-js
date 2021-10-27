@@ -8,15 +8,16 @@ locals {
 ########################
 
 resource "aws_s3_bucket" "static_upload" {
-  bucket_prefix = "next-tf-deploy-source"
+  bucket_prefix = "${var.deployment_name}-tfn-deploy"
   acl           = "private"
   force_destroy = true
-  tags          = var.tags
 
   # We are using versioning here to ensure that no file gets overridden at upload
   versioning {
     enabled = true
   }
+
+  tags = merge(var.tags, var.tags_s3_bucket)
 }
 
 resource "aws_s3_bucket_notification" "on_create" {
@@ -33,10 +34,9 @@ resource "aws_s3_bucket_notification" "on_create" {
 #########################
 
 resource "aws_s3_bucket" "static_deploy" {
-  bucket_prefix = "next-tf-static-deploy"
+  bucket_prefix = "${var.deployment_name}-tfn-static"
   acl           = "private"
   force_destroy = true
-  tags          = var.tags
 
   lifecycle_rule {
     id      = "Expire static assets"
@@ -50,6 +50,8 @@ resource "aws_s3_bucket" "static_deploy" {
       days = var.expire_static_assets > 0 ? var.expire_static_assets : 0
     }
   }
+
+  tags = merge(var.tags, var.tags_s3_bucket)
 }
 
 # CloudFront permissions for the bucket
@@ -158,26 +160,22 @@ data "aws_iam_policy_document" "access_sqs_queue" {
 }
 
 module "lambda_content" {
-  source  = "dealmore/download/npm"
-  version = "1.0.0"
+  source  = "milliHQ/download/npm"
+  version = "2.0.0"
 
-  module_name    = "@dealmore/terraform-next-deploy-trigger"
+  module_name    = "@millihq/terraform-next-deploy-trigger"
   module_version = var.deploy_trigger_module_version
   path_to_file   = "dist.zip"
   use_local      = var.debug_use_local_packages
-}
-
-resource "random_id" "function_name" {
-  prefix      = "next-tf-deploy-"
-  byte_length = 4
+  local_cwd      = var.tf_next_module_root
 }
 
 module "deploy_trigger" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "2.4.0"
 
-  function_name             = random_id.function_name.hex
-  description               = "Managed by Terraform-next.js"
+  function_name             = "${var.deployment_name}_tfn-deploy"
+  description               = "Managed by Terraform Next.js"
   handler                   = "handler.handler"
   runtime                   = "nodejs14.x"
   memory_size               = 1024

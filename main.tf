@@ -24,14 +24,6 @@ locals {
   })
 }
 
-# Generates for each function a unique function name
-resource "random_id" "function_name" {
-  for_each = local.lambdas
-
-  prefix      = "${each.key}-"
-  byte_length = 4
-}
-
 #########
 # Lambdas
 #########
@@ -51,8 +43,10 @@ module "statics_deploy" {
 
   deployment_name = var.deployment_name
   tags            = var.tags
+  tags_s3_bucket  = var.tags_s3_bucket
 
   debug_use_local_packages = var.debug_use_local_packages
+  tf_next_module_root      = path.module
 }
 
 # Lambda
@@ -60,8 +54,8 @@ module "statics_deploy" {
 resource "aws_lambda_function" "this" {
   for_each = local.lambdas
 
-  function_name = random_id.function_name[each.key].hex
-  description   = "Managed by Terraform-next.js"
+  function_name = "${var.deployment_name}_${each.key}"
+  description   = "Managed by Terraform Next.js"
   role          = aws_iam_role.lambda[each.key].arn
   handler       = lookup(each.value, "handler", "")
   runtime       = lookup(each.value, "runtime", var.lambda_runtime)
@@ -97,7 +91,7 @@ resource "aws_lambda_permission" "current_version_triggers" {
 
   statement_id  = "AllowInvokeFromApiGateway"
   action        = "lambda:InvokeFunction"
-  function_name = random_id.function_name[each.key].hex
+  function_name = "${var.deployment_name}_${each.key}"
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "${module.api_gateway.apigatewayv2_api_execution_arn}/*/*/*"
@@ -128,7 +122,7 @@ module "api_gateway" {
   version = "1.1.0"
 
   name          = var.deployment_name
-  description   = "Managed by Terraform-next.js"
+  description   = "Managed by Terraform Next.js"
   protocol_type = "HTTP"
 
   create_api_domain_name = false
@@ -153,7 +147,7 @@ data "aws_iam_policy_document" "access_static_deployment" {
 module "next_image" {
   count = var.create_image_optimization ? 1 : 0
 
-  source  = "dealmore/next-js-image-optimization/aws"
+  source  = "milliHQ/next-js-image-optimization/aws"
   version = ">= 11.0.0"
 
   cloudfront_create_distribution = false
@@ -175,7 +169,7 @@ module "next_image" {
   lambda_policy_json               = data.aws_iam_policy_document.access_static_deployment.json
   lambda_role_permissions_boundary = var.lambda_role_permissions_boundary
 
-  deployment_name = var.deployment_name
+  deployment_name = "${var.deployment_name}_tfn-image"
   tags            = var.tags
 }
 
@@ -192,16 +186,12 @@ module "proxy_config" {
 
   deployment_name = var.deployment_name
   tags            = var.tags
+  tags_s3_bucket  = var.tags_s3_bucket
 }
 
 #####################
 # Proxy (Lambda@Edge)
 #####################
-
-resource "random_id" "policy_name" {
-  prefix      = "${var.deployment_name}-"
-  byte_length = 4
-}
 
 module "proxy" {
   source = "./modules/proxy"
@@ -212,6 +202,7 @@ module "proxy" {
   tags            = var.tags
 
   debug_use_local_packages = var.debug_use_local_packages
+  tf_next_module_root      = path.module
 
   providers = {
     aws.global_region = aws.global_region
@@ -225,7 +216,12 @@ module "proxy" {
 # Origin & Cache Policies
 #########################
 
-# Managed origin policy
+# Managed origin policy for default behavior
+data "aws_cloudfront_origin_request_policy" "managed_all_viewer" {
+  name = "Managed-AllViewer"
+}
+
+# Managed origin policy for static assets
 data "aws_cloudfront_origin_request_policy" "managed_cors_s3_origin" {
   name = "Managed-CORS-S3Origin"
 }
@@ -235,32 +231,20 @@ data "aws_cloudfront_cache_policy" "managed_caching_optimized" {
   name = "Managed-CachingOptimized"
 }
 
-resource "aws_cloudfront_origin_request_policy" "this" {
-  name    = "${random_id.policy_name.hex}-origin"
-  comment = "Managed by Terraform Next.js"
-
-  cookies_config {
-    cookie_behavior = "all"
-  }
-
-  headers_config {
-    header_behavior = length(var.cloudfront_origin_headers) == 0 ? "none" : "whitelist"
-
-    dynamic "headers" {
-      for_each = length(var.cloudfront_origin_headers) == 0 ? [] : [true]
-      content {
-        items = var.cloudfront_origin_headers
-      }
-    }
-  }
-
-  query_strings_config {
-    query_string_behavior = "all"
-  }
+locals {
+  # Default headers on which the cache key should be determined
+  #
+  # host - When using multiple domains host header ensures that each
+  #        (sub-)domain has a unique cache key
+  cloudfront_cache_default_key_headers = ["host"]
+  cloudfront_cache_key_headers = sort(concat(
+    local.cloudfront_cache_default_key_headers,
+    var.cloudfront_cache_key_headers
+  ))
 }
 
 resource "aws_cloudfront_cache_policy" "this" {
-  name    = "${random_id.policy_name.hex}-cache"
+  name    = "${var.deployment_name}_tfn-cache"
   comment = "Managed by Terraform Next.js"
 
   # Default values (Should be provided by origin)
@@ -274,13 +258,10 @@ resource "aws_cloudfront_cache_policy" "this" {
     }
 
     headers_config {
-      header_behavior = length(var.cloudfront_cache_key_headers) == 0 ? "none" : "whitelist"
+      header_behavior = "whitelist"
 
-      dynamic "headers" {
-        for_each = length(var.cloudfront_cache_key_headers) == 0 ? [] : [true]
-        content {
-          items = var.cloudfront_cache_key_headers
-        }
+      headers {
+        items = local.cloudfront_cache_key_headers
       }
     }
 
@@ -351,7 +332,7 @@ locals {
       compress               = true
       viewer_protocol_policy = "redirect-to-https"
 
-      origin_request_policy_id = aws_cloudfront_origin_request_policy.this.id
+      origin_request_policy_id = var.cloudfront_origin_request_policy != null ? var.cloudfront_origin_request_policy : data.aws_cloudfront_origin_request_policy.managed_all_viewer.id
       cache_policy_id          = aws_cloudfront_cache_policy.this.id
 
       lambda_function_association = {
@@ -408,7 +389,11 @@ module "cloudfront_main" {
 
   source = "./modules/cloudfront-main"
 
-  cloudfront_price_class             = var.cloudfront_price_class
+  cloudfront_price_class              = var.cloudfront_price_class
+  cloudfront_aliases                  = var.cloudfront_aliases
+  cloudfront_acm_certificate_arn      = var.cloudfront_acm_certificate_arn
+  cloudfront_minimum_protocol_version = var.cloudfront_minimum_protocol_version
+
   cloudfront_default_root_object     = local.cloudfront_default_root_object
   cloudfront_origins                 = local.cloudfront_origins
   cloudfront_default_behavior        = local.cloudfront_default_behavior

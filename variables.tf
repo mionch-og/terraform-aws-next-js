@@ -104,10 +104,28 @@ variable "cloudfront_price_class" {
   default     = "PriceClass_100"
 }
 
-variable "cloudfront_origin_headers" {
-  description = "Header keys that should be sent to the S3 or Lambda origins. Should not contain any header that is defined via cloudfront_cache_key_headers."
+variable "cloudfront_aliases" {
+  description = "Aliases for custom_domain"
   type        = list(string)
   default     = []
+}
+
+variable "cloudfront_acm_certificate_arn" {
+  description = "ACM certificate arn for custom_domain"
+  type        = string
+  default     = null
+}
+
+variable "cloudfront_minimum_protocol_version" {
+  description = "The minimum version of the SSL protocol that you want CloudFront to use for HTTPS connections. One of SSLv3, TLSv1, TLSv1_2016, TLSv1.1_2016, TLSv1.2_2018 or TLSv1.2_2019."
+  type        = string
+  default     = "TLSv1"
+}
+
+variable "cloudfront_origin_request_policy" {
+  description = "Id of a custom request policy that overrides the default policy (AllViewer). Can be custom or managed."
+  type        = string
+  default     = null
 }
 
 variable "cloudfront_cache_key_headers" {
@@ -132,13 +150,24 @@ variable "cloudfront_external_arn" {
 # Labeling
 ##########
 variable "deployment_name" {
-  description = "Identifier for the deployment group (alphanumeric characters, underscores, hyphens, slashes, hash signs and dots are allowed)."
+  description = "Identifier for the deployment group (only lowercase alphanumeric characters and hyphens are allowed)."
   type        = string
   default     = "tf-next"
+
+  validation {
+    condition     = can(regex("[a-z0-9-]+", var.deployment_name))
+    error_message = "Only lowercase alphanumeric characters and hyphens allowed."
+  }
 }
 
 variable "tags" {
   description = "Tag metadata to label AWS resources that support tags."
+  type        = map(string)
+  default     = {}
+}
+
+variable "tags_s3_bucket" {
+  description = "Tag metadata to label AWS S3 buckets. Overrides tags with the same name in input variable tags."
   type        = map(string)
   default     = {}
 }
