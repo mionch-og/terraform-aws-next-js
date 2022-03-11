@@ -254,7 +254,7 @@ resource "aws_cloudfront_cache_policy" "this" {
 
   parameters_in_cache_key_and_forwarded_to_origin {
     cookies_config {
-      cookie_behavior = "all"
+      cookie_behavior = "none"
     }
 
     headers_config {
