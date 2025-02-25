@@ -177,7 +177,7 @@ module "deploy_trigger" {
   function_name             = "${var.deployment_name}_tfn-deploy"
   description               = "Managed by Terraform Next.js"
   handler                   = "handler.handler"
-  runtime                   = "nodejs14.x"
+  runtime                   = "nodejs18.x"
   memory_size               = 1024
   timeout                   = local.lambda_timeout
   publish                   = true
